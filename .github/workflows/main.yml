@@ -76,7 +76,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125"
 
       - name: Generate React Native Android project
         run: npx @react-native-community/cli@14 init CleanOSProNative --version 0.75.4 --skip-install --skip-git-init
@@ -110,6 +110,25 @@ jobs:
       - name: Install app dependencies
         working-directory: CleanOSProNative
         run: npm install
+
+      - name: Upgrade Android build tools for resolved AndroidX dependencies
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("CleanOSProNative/android/build.gradle")
+          text = path.read_text()
+          replacements = {
+              'buildToolsVersion = "34.0.0"': 'buildToolsVersion = "35.0.0"',
+              'compileSdkVersion = 34': 'compileSdkVersion = 35',
+              'classpath("com.android.tools.build:gradle")': 'classpath("com.android.tools.build:gradle:8.6.1")',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"Expected Gradle setting not found: {old}")
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
 
       - name: Build debug APK
         working-directory: CleanOSProNative/android
