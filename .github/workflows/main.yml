@@ -1,0 +1,124 @@
+name: CleanOS Android APK + CI
+
+on:
+  push:
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "scripts/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "scripts/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-tests:
+    name: Frontend tests and TypeScript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test -- --watchAll=false
+      - run: npx tsc --noEmit
+
+  backend-tests:
+    name: Backend lint, tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - run: npm run build
+
+  android-debug-apk:
+    name: Build Android debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+
+      - name: Generate React Native Android project
+        run: npx @react-native-community/cli@14 init CleanOSProNative --version 0.75.4 --skip-install --skip-git-init
+
+      - name: Copy app sources and merge dependencies
+        run: |
+          rm -rf CleanOSProNative/src
+          cp -R frontend/src CleanOSProNative/src
+          cp frontend/App.tsx CleanOSProNative/App.tsx
+          cp frontend/tsconfig.json CleanOSProNative/tsconfig.json
+          python3 scripts/mac/merge_package_json.py frontend/package.json CleanOSProNative/package.json
+
+      - name: Configure Babel aliases and Reanimated
+        working-directory: CleanOSProNative
+        run: |
+          npm install --save-dev babel-plugin-module-resolver
+          cat > babel.config.js <<'BABEL'
+          module.exports = {
+            presets: ['module:@react-native/babel-preset'],
+            plugins: [
+              ['module-resolver', {
+                root: ['./src'],
+                alias: { '@': './src' },
+                extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
+              }],
+              'react-native-reanimated/plugin',
+            ],
+          };
+          BABEL
+
+      - name: Install app dependencies
+        working-directory: CleanOSProNative
+        run: npm install
+
+      - name: Build debug APK
+        working-directory: CleanOSProNative/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleanos-debug-apk
+          path: CleanOSProNative/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
