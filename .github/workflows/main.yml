@@ -92,7 +92,6 @@ jobs:
       - name: Configure Babel aliases and Reanimated
         working-directory: CleanOSProNative
         run: |
-          npm install --save-dev babel-plugin-module-resolver
           cat > babel.config.js <<'BABEL'
           module.exports = {
             presets: ['module:@react-native/babel-preset'],
@@ -109,7 +108,7 @@ jobs:
 
       - name: Install app dependencies
         working-directory: CleanOSProNative
-        run: npm install
+        run: npm install --fetch-retries=5 --fetch-timeout=300000
 
       - name: Upgrade Android build tools for resolved AndroidX dependencies
         run: |
